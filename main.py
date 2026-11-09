@@ -41,7 +41,8 @@ HEADERS = {
 
 def run_agent(swarm: Swarm) -> None:
     swarm.main()
-    os.kill(os.getpid(), signal.SIGINT)
+    if os.name != "nt":
+        os.kill(os.getpid(), signal.SIGINT)
 
 
 def cleanup(
@@ -85,9 +86,6 @@ def main() -> None:
     logger.addHandler(file_handler)
     logger.addHandler(stdout_handler)
 
-    # logging.getLogger("requests").setLevel(logging.CRITICAL)
-    # logging.getLogger("werkzeug").setLevel(logging.CRITICAL)
-
     parser = argparse.ArgumentParser(description="ARC-AGI-3-Agents")
     parser.add_argument(
         "-a",
@@ -116,26 +114,44 @@ def main() -> None:
 
     print(f"{ROOT_URL}/api/games")
 
-    # Get the list of games from the API
+    # Get the list of games from the API (or local offline environments)
     full_games = []
-    try:
-        with requests.Session() as session:
-            session.headers.update(HEADERS)
-            r = session.get(f"{ROOT_URL}/api/games", timeout=10)
+    if os.environ.get("OPERATION_MODE", "").strip().lower() == "offline":
+        from arc_agi import Arcade, OperationMode
 
-        if r.status_code == 200:
-            try:
-                full_games = [g["game_id"] for g in r.json()]
-            except (ValueError, KeyError) as e:
-                logger.error(f"Failed to parse games response: {e}")
-                logger.error(f"Response content: {r.text[:200]}")
-        else:
-            logger.error(
-                f"API request failed with status {r.status_code}: {r.text[:200]}"
-            )
+        local_arc = Arcade(operation_mode=OperationMode.OFFLINE)
+        full_games = [e.game_id for e in local_arc.get_environments()]
+    else:
+        try:
+            with requests.Session() as session:
+                session.headers.update(HEADERS)
+                r = session.get(f"{ROOT_URL}/api/games", timeout=10)
 
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Failed to connect to API server: {e}")
+            if r.status_code == 200:
+                try:
+                    full_games = [g["game_id"] for g in r.json()]
+                except (ValueError, KeyError) as e:
+                    logger.error(f"Failed to parse games response: {e}")
+                    logger.error(f"Response content: {r.text[:200]}")
+            else:
+                logger.error(
+                    f"API request failed with status {r.status_code}: {r.text[:200]}"
+                )
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to connect to API server: {e}")
+
+        if not full_games:
+            from arc_agi import Arcade, OperationMode
+
+            local_arc = Arcade(operation_mode=OperationMode.OFFLINE)
+            local_envs = local_arc.get_environments()
+            if local_envs:
+                os.environ["OPERATION_MODE"] = "offline"
+                full_games = [e.game_id for e in local_envs]
+                logger.info(
+                    f"Loaded {len(full_games)} local offline environment(s): {full_games}"
+                )
 
     # For playback agents, we can derive the game from the recording filename
     if not full_games and args.agent and args.agent.endswith(".recording.jsonl"):
@@ -194,7 +210,7 @@ def main() -> None:
     try:
         # Wait for the agent thread to complete
         while agent_thread.is_alive():
-            agent_thread.join(timeout=5)  # Check every 5 second
+            agent_thread.join(timeout=1)  # Check every 1 second
     except KeyboardInterrupt:
         logger.info("KeyboardInterrupt received in main thread")
         cleanup(swarm, signal.SIGINT, None)

@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from .agent import Agent, Playback
 from .recorder import Recorder
 from .swarm import Swarm
+from .templates.baiopenclaw_swarm_agent import BAIopenclawSwarmAgent
 from .templates.langgraph_functional_agent import LangGraphFunc, LangGraphTextOnly
 from .templates.langgraph_random_agent import LangGraphRandom
 from .templates.langgraph_thinking import LangGraphThinking
@@ -27,10 +28,12 @@ AVAILABLE_AGENTS: dict[str, Type[Agent]] = {
 for rec in Recorder.list():
     AVAILABLE_AGENTS[rec] = Playback
 
-# update the agent dictionary to include subclasses of LLM class
+# update the agent dictionary to include subclasses of LLM class and aliases
 AVAILABLE_AGENTS["reasoningagent"] = ReasoningAgent
+AVAILABLE_AGENTS["baiopenclaw"] = BAIopenclawSwarmAgent
 
 __all__ = [
+    "BAIopenclawSwarmAgent",
     "Swarm",
     "Random",
     "LangGraphFunc",
